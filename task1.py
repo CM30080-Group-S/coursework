@@ -1,6 +1,6 @@
 from skimage import io
 from skimage.transform import hough_line, hough_line_peaks
-from skimage.feature import canny
+from skimage.morphology import binary_erosion
 import os
 import numpy as np
 
@@ -55,10 +55,13 @@ def preprocess(image):
     """
     Preprocesses the image by removing the background.
     """
-    # Run canny edge detection
-    edges = canny(image, sigma=2, low_threshold=0.1, high_threshold=0.2)
-    # Remove the background
-    image[edges == 0] = 0
+
+    # Binarize the image
+    image = image > 0.25
+
+    # Binary erosion
+    image = binary_erosion(image)
+
     return image
 
 def get_angle(line_1, line_2):
