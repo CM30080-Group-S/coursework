@@ -86,7 +86,7 @@ def evaluate(predictions, ground_truth, verbose=False):
 
 def preprocess(image):
     """
-    Preprocesses the image by removing the background.
+    Preprocesses the image.
     """
 
     # Binarize the image
@@ -142,6 +142,7 @@ def main(image_path, ground_truth_path, verbose=False):
     
 
 if __name__ == "__main__":
+    # TODO get this to work with single images and ground truth values
     parser = argparse.ArgumentParser(
         description='''Task 1: Measuring the angle between two lines in an image using the Hough transform and the RANSAC algorithm. The angle is measured in degrees and the accuracy is measured as the relative error between the predicted angle and the ground truth angle. The accuracy is expressed as a percentage. The average accuracy is the average of the accuracies of all images. The images are located in the folder "data" and the ground truth is located in the file "list.txt''',
     )
