@@ -64,7 +64,7 @@ def hough_transform(image):
     """
     Performs the hough transform on a given image.
     """
-    tested_angles = np.linspace(-np.pi / 2, np.pi / 2, 360, endpoint=False)
+    tested_angles = np.linspace(-np.pi / 2, np.pi / 2, 720)
     h, theta, d = hough_line(image, theta=tested_angles)
     return h, theta, d
     
@@ -73,16 +73,17 @@ def evaluate(predictions, ground_truth, verbose=False):
     Evaluates the predictions of the model and returns the accuracy.
     """
     accuracies = []
-    for i in range(len(predictions)):
+    # Zip predictions and ground truth together by image name
+    for (image_name, prediction) in predictions.items():
         # Print the accuracy of the model
-        absolute_error = np.abs(predictions[i] - ground_truth[i])
-        relative_error = absolute_error / ground_truth[i]
+        absolute_error = np.abs(prediction - ground_truth[image_name])
+        relative_error = absolute_error / ground_truth[image_name]
         accuracy = 1 - relative_error
         accuracies.append(accuracy)
 
         if verbose:
             # Express the accuracy as a percentage
-            print(f"Accuracy for image {i + 1}: {accuracy * 100:.2f}%")
+            print(f"Accuracy for image {image_name}: {accuracy * 100:.2f}%")
     
     # Return the average accuracy
     return np.mean(accuracies)
@@ -92,11 +93,8 @@ def preprocess(image):
     Preprocesses the image.
     """
 
-    # Binarize the image
-    image = image > 0.25
-
-    # Binary erosion
-    image = binary_erosion(image)
+    # Canny edge detection
+    image = canny(image, sigma=1)
 
     return image
 
@@ -104,8 +102,8 @@ def get_angle(line_1, line_2):
     """
     Returns the angle between two lines in radians.
     """
-    angle_1 = line_1[2]
-    angle_2 = line_2[2]
+    x0_1, y0_1, angle_1, dist_1 = line_1
+    x0_2, y0_2, angle_2, dist_2 = line_2
     return np.abs(angle_1 - angle_2)
 
 
@@ -133,10 +131,6 @@ def main(image_path, ground_truth_path, verbose=False):
         angle = np.rad2deg(get_angle(lines[0], lines[1]))
         predictions[image_name] = angle
 
-    # Sort the predictions and ground truth by filename
-    predictions = [predictions[key] for key in sorted(predictions.keys())]
-    ground_truth = [ground_truth[key] for key in sorted(ground_truth.keys())]
-
     # Evaluate the predictions
     average_accuracy = evaluate(predictions, ground_truth, verbose)
     if verbose:
@@ -153,4 +147,5 @@ if __name__ == "__main__":
     parser.add_argument("ground_truth_path", help="Path to the ground truth")
     parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
     image_path, ground_truth_path, verbose = itemgetter("image_path", "ground_truth_path", "verbose")(vars(parser.parse_args()))
-    main(image_path, ground_truth_path, verbose)
+    average_accuracy = main(image_path, ground_truth_path, verbose)
+    print(f"Average accuracy: {average_accuracy * 100:.2f}%")
