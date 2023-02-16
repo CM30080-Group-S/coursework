@@ -1,11 +1,14 @@
-from skimage import io
-from skimage.transform import hough_line, hough_line_peaks
-from skimage.morphology import binary_erosion
-import os
-import numpy as np
-import sys
 import argparse
+import os
+import sys
 from operator import itemgetter
+
+import numpy as np
+from skimage.feature import canny
+from skimage.io import imread
+from skimage.morphology import binary_erosion
+from skimage.transform import hough_line, hough_line_peaks
+
 
 def load_images(path):
     """
@@ -18,7 +21,7 @@ def load_images(path):
         images = {}
         for file in os.listdir(path):
             if file.endswith(".png"):
-                images[file] = io.imread(path + file, as_gray=True)
+                images[file] = imread(path + file, as_gray=True)
         return images
     except FileNotFoundError:
         print(f"Error: The path {path} does not exist.")
