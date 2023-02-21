@@ -6,7 +6,6 @@ from operator import itemgetter
 import numpy as np
 from skimage.feature import canny
 from skimage.io import imread
-from skimage.morphology import binary_erosion
 from skimage.transform import hough_line, hough_line_peaks
 
 
@@ -73,7 +72,6 @@ def evaluate(predictions, ground_truth, verbose=False):
     Evaluates the predictions of the model and returns the accuracy.
     """
     accuracies = []
-    # Zip predictions and ground truth together by image name
     for (image_name, prediction) in predictions.items():
         # Print the accuracy of the model
         absolute_error = np.abs(prediction - ground_truth[image_name])
