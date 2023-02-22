@@ -3,6 +3,7 @@ import os
 import pickle
 import sys
 from collections import defaultdict
+from operator import itemgetter
 
 import numpy as np
 from skimage.feature import match_template
@@ -16,6 +17,7 @@ def load_images(path):
     """
     if not path.endswith("/"):
         path += "/"
+
     try:
         images = {}
         for file in os.listdir(path):
@@ -52,7 +54,6 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
     """
     # Check if the templates have already been generated
     if use_cache:
-
         # Check if the cache directory exists
         if not os.path.exists(".cache"):
             os.mkdir(".cache")
@@ -62,7 +63,7 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
         cache_size_mb = cache_size_bytes / 1000000
         if verbose:
             print(f"Cache size: {cache_size_mb} MB")
-        
+
         if cache_size_mb > 1000 and verbose:
             print(f"Warning: The cache directory is getting large ({cache_size_mb} MB). Consider deleting some files.")
 
@@ -92,7 +93,7 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
             if angle == 0:
                 templates.append(template)
                 continue
-            
+
             templates.append(rotate(template, angle))
 
     if use_cache:
@@ -112,22 +113,19 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
             pickle.dump(templates, f)
 
     return templates
-    
 
-def main():
-    training_images = load_images("data/task2/training")
-    
+
+def main(training_images_path, test_images_path, ground_truths_path, angles, levels, verbose=False):
+    training_images = load_images(training_images_path)
+
     # Get template variants of each emoji
     templates = defaultdict(list)
-    for emoji, test_image in training_images.items():
-        # TODO: add in command line arguments for levels and angles
-        LEVELS = 4
-        ANGLES = np.linspace(0, 360, 12, endpoint=False)
-        templates[emoji] = generate_templates(emoji, test_image, LEVELS, [0], verbose=False)
-    
-    # Load test images
-    test_images = load_images("data/task2/test/images")
+    for emoji, training_image in training_images.items():
+        roation_angles = np.linspace(0, 360, angles, endpoint=False)
+        templates[emoji] = generate_templates(emoji, training_image, levels, roation_angles, verbose)
 
+    # Load test images
+    test_images = load_images(test_images_path)
 
     # Preprocess the test image
     test_image = preprocess(test_images["test_image_1.png"])
@@ -138,15 +136,21 @@ def main():
         # For each rotated image
         for index, template in enumerate(emoji_templates):
             template = preprocess(template)
-            print(f"Matching {emoji}, variant {index + 1}...")
+
+            if verbose:
+                print(f"Matching {emoji}, variant {index + 1}...")
+
             # Find matches
             result = match_template(test_image, template)
-            print(result.max())
-            
+
+            if verbose:
+                print(result.max())
+
             if result.max() > 0.8:
                 matches.append((emoji, result, index))
-            
-    # TODO: if there are no matches, and verbose is true, print "No matches found".
+
+    if len(matches) == 0 and verbose:
+        print("No matches found")
 
     # For each match, get the bounding box
     for emoji, result, index in matches:
@@ -160,8 +164,25 @@ def main():
         # TODO 2: add in evaluation code. Load in the ground truth and compare the results to the ground truth.
 
 
-
 if __name__ == "__main__":
-    # TODO add command line parser. Update docs.
-    parser = argparse.ArgumentParser()
-    main()
+    parser = argparse.ArgumentParser(
+        description='''Task 2: Using intensity-based template matching to perform scale and rotation invariant identification of emojis and their bounding boxes. The accuracy is expressed as a percentage. The training images are located in the folder "data/task2/training", the test images are located in the folder "data/task2/test/images" and the corresponding annotations are located in the folder "data/task2/test/annotations"''',
+    )
+    parser.add_argument("training_images_path", help="Path to the training images")
+    parser.add_argument("test_images_path", help="Path to the test images")
+    parser.add_argument("ground_truths_path", help="Path to the ground truths")
+    parser.add_argument("-a", "--angles", help="Angles between 0 and 360 to use for image rotations (default is 1)", default=1, type=int)
+    parser.add_argument("-l", "--levels", help="Gaussian pyramid levels (default is 4)", default=4, type=int)
+    parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
+    training_images_path, test_images_path, ground_truths_path, angles, levels, verbose = (
+        itemgetter(
+            "training_images_path",
+            "test_images_path",
+            "ground_truths_path",
+            "angles",
+            "levels",
+            "verbose"
+        )(vars(parser.parse_args()))
+    )
+
+    main(training_images_path, test_images_path, ground_truths_path, angles, levels, verbose)
