@@ -47,7 +47,6 @@ def preprocess(image):
     image[image < 0.5] = 0
     return image
 
-# Memoise the function and store the results on disk
 def generate_templates(image_class, image, levels, angles, verbose=False, use_cache=True):
     """
     Generates rotated templates for a given image, number of levels, and angles.
