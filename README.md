@@ -32,7 +32,7 @@ python task1.py data/task1/ data/task1/ground_truth.txt
 ```
 
 ## Task 2
-Given an image containing rotated and scaled variants of images from a given bank of images, use intensity-based template matching to identify the images in the original image. We preprocess the images by setting the background to 0. We then take the bank of images and create a gaussian pyramid for each image that contains the same images at different scales. We also take each scaled image and store multiple rotations of the same image at varying angles. Finally, we take these generated templates and "slide" them over the test images and use intensity-based matching to identify the scaled and rotated images and their bounding boxes. This matching is achieved by measuring the similarities across the x and y axes and a similarity score is computed.
+Given an image containing rotated and scaled variants of images from a given bank of images, use intensity-based template matching to identify the images in the original image. We preprocess the images by setting the background to 0. We then take the bank of images and create a [Gaussian pyramid](https://en.wikipedia.org/wiki/Pyramid_(image_processing)) for each image that contains the same images at different scales. We also take each scaled image and store multiple rotations of the same image at varying angles. Finally, we take these generated templates and "slide" them over the test images and use intensity-based matching to identify the scaled and rotated images and their bounding boxes. This matching is achieved by measuring the similarities across the x and y axes and a similarity score is computed.
 
 ### Usage
 ```
