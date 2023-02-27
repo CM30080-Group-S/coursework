@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 import pickle
 import sys
 from collections import defaultdict
@@ -9,6 +10,7 @@ import numpy as np
 from skimage.feature import match_template
 from skimage.io import imread
 from skimage.transform import pyramid_gaussian, rotate
+from tqdm import tqdm
 
 
 def load_images(path):
@@ -114,6 +116,81 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
     return templates
 
 
+def compute_bounding_box(match,templates):
+    emoji, result, index = match
+    ij = np.unravel_index(np.argmax(result), result.shape)
+    x, y = ij[::-1]
+    w, h = templates[emoji][index].shape
+    return ((x,y),(x+w,y+h))
+
+
+def compute_iou(box_1,box_2):
+    """
+    Compute the intersection over union of the matching bounding boxes
+    """
+
+    # bl is the bottom left of the given box and tr is the top right
+    bl, tr, x, y = (0, 1, 0, 1)
+
+    box_1_area = (box_1[tr][x] - box_1[bl][x]) * (box_1[tr][y] - box_1[bl][y])
+    box_2_area = (box_2[tr][x] - box_2[bl][x]) * (box_2[tr][y] - box_2[bl][y])
+
+    intersect = (min(box_1[tr][x], box_2[tr][x]) - max(box_1[bl][x], box_2[bl][x])) * (min(box_1[tr][y], box_2[tr][y]) - max(box_1[bl][y], box_2[bl][y]))
+
+    if intersect < 0:
+        intersect = 0
+    union = box_1_area + box_2_area - intersect
+    return intersect / union
+
+
+def evaluate(matches, templates, annotations_file):
+    # Read in the data from the annotations
+    annotations = {}
+    with open(annotations_file, "r") as f:
+        lines = f.readlines()
+        for annotation in lines:
+            annotation = annotation.split(",", 1)
+            class_name = annotation[0]
+            bounding_box = annotation[1].strip()
+
+            bounding_box = bounding_box.split(",")
+
+            start_x = int(bounding_box[0].strip()[1:])
+            start_y = int(bounding_box[1].strip()[:-1])
+            end_x = int(bounding_box[2].strip()[1:])
+            end_y = int(bounding_box[3].strip()[:-1])
+
+            annotations[class_name] = ((start_x, start_y), (end_x, end_y))
+
+    true_positives = 0
+    false_positives = 0
+    accuracy = []
+    # Determine if we have a: true positive, false positive for each match
+    for match in matches:
+        emoji = match[0]
+        bounding_box = compute_bounding_box(match, templates)
+
+        emoji = emoji.rsplit(".")[0].split("-",1)[1]
+
+        # Determine if we have a: true positive, false positive
+        if emoji in annotations.keys():
+            true_positives += 1
+            accuracy.append(compute_iou(bounding_box, annotations[emoji]))
+        else:
+            false_positives += 1
+            accuracy.append(0)
+
+    # Loop through the annotatioins that were not matched
+    for annotation in annotations.keys():
+        if annotation not in [(match[0].rsplit(".")[0].split("-",1)[1]) for match in matches]:
+            accuracy.append(0)
+    
+    # Compute the intersection over union of the bounding boxes
+    overall_accuracy = sum(accuracy) / len(accuracy)
+
+    return true_positives, false_positives, overall_accuracy
+
+
 def main(training_images_path, test_images_path, ground_truths_path, angles, levels, verbose=False):
     training_images = load_images(training_images_path)
 
@@ -125,44 +202,63 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
 
     # Load test images
     test_images = load_images(test_images_path)
+    total_tp = 0
+    total_fp = 0
+    total_acc = []
+    for key, test_image in tqdm(test_images.items()):
+        # Preprocess the test image
+        test_image = preprocess(test_image)
+        annotation_file_path = ground_truths_path + '/' + (key.split('.')[0])
+        if (Path(annotation_file_path + '.txt')).exists():
+            annotation_file_path += '.txt'
+        elif (Path(annotation_file_path + '.csv')).exists():
+            annotation_file_path += '.csv'
+        else:
+            print(f'No matching annotations found for test image {key}, continuing to next test image...')
+            continue
 
-    # Preprocess the test image
-    test_image = preprocess(test_images["test_image_1.png"])
+        # For each pyramid
+        matches = []
+        for emoji, emoji_templates in templates.items():
+            # For each rotated image
+            for index, template in enumerate(emoji_templates):
+                template = preprocess(template)
 
-    # For each pyramid
-    matches = []
-    for emoji, emoji_templates in templates.items():
-        # For each rotated image
-        for index, template in enumerate(emoji_templates):
-            template = preprocess(template)
+                if verbose:
+                    print(f"Matching {emoji}, variant {index + 1}...")
 
+                # Find matches
+                result = match_template(test_image, template)
+
+                if verbose:
+                    print(result.max())
+
+                if result.max() > 0.95:
+                    matches.append((emoji, result, index))
+
+        if len(matches) == 0 and verbose:
+            print("No matches found")
+
+        # For each match, get the bounding box
+        for match in matches:
+            emoji, result, index = match
             if verbose:
-                print(f"Matching {emoji}, variant {index + 1}...")
-
-            # Find matches
-            result = match_template(test_image, template)
-
+                print(f"Found match for {emoji}, variant {index + 1} with score {result.max()}")
+            # Get the bounding box
+            bounding_box = compute_bounding_box(match,templates)
             if verbose:
-                print(result.max())
+                print(f"Bounding box: {bounding_box}")
 
-            if result.max() > 0.8:
-                matches.append((emoji, result, index))
+        tp, fp, acc = evaluate(matches, templates, annotation_file_path)
+        total_tp += tp
+        total_fp += fp
+        total_acc.append(acc)
 
-    if len(matches) == 0 and verbose:
-        print("No matches found")
+    print(f"True positive rate: {total_tp / (total_tp + total_fp)} (total: {total_tp})")
+    print(f"False positive rate: {total_fp / (total_tp + total_fp)} (total: {total_fp})")
+    print(f"Accuracy: {np.mean(total_acc)}")
 
-    # For each match, get the bounding box
-    for emoji, result, index in matches:
-        print(f"Found match for {emoji}, variant {index + 1} with score {result.max()}")
-        # Get the bounding box
-        ij = np.unravel_index(np.argmax(result), result.shape)
-        x, y = ij[::-1]
-        w, h = templates[emoji][index].shape
-        print(f"Bounding box: ({x}, {y}), ({x + w}, {y + h})")
-
-        # TODO 2: add in evaluation code. Load in the ground truth and compare the results to the ground truth.
-
-
+        
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='''Task 2: Using intensity-based template matching to perform scale and rotation invariant identification of emojis and their bounding boxes. The accuracy is expressed as a percentage. The training images are located in the folder "data/task2/training", the test images are located in the folder "data/task2/test/images" and the corresponding annotations are located in the folder "data/task2/test/annotations"''',
