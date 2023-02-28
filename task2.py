@@ -1,10 +1,10 @@
 import argparse
 import os
-from pathlib import Path
 import pickle
 import sys
 from collections import defaultdict
 from operator import itemgetter
+from pathlib import Path
 
 import numpy as np
 from skimage.feature import match_template
@@ -251,9 +251,11 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
                 print(f"Found match for {emoji}, variant {index + 1} with score {result.max()}")
             # Get the bounding box
             bounding_box = compute_bounding_box(match,templates)
+            # TODO 2: Bounding boxes
             if verbose:
                 print(f"Bounding box: {bounding_box}")
 
+        # TODO 3: Timing
         tp, fp, acc = evaluate(matches, templates, annotation_file_path)
         total_tp += tp
         total_fp += fp
