@@ -51,7 +51,7 @@ python task2.py [-a] [-l] [-t] [-v] <training_images> <test_image_path> <ground_
 python task2.py data/task2/training data/task2/test/images data/task2/test/annotations
 ```
 
-## Task 2
+## Task 3
 Given an image containing rotated and scaled variants of images from a given bank, use [SIFT](https://en.wikipedia.org/wiki/Scale-invariant_feature_transform) feature matching to identify the variants in the original image. We detect the keypoints in an image and extract their descriptors. For each test image, we iterate over the emoji images, and perform the same keypoint detection on the emoji. We then compare and match the descriptors of the keypoints of the emoji image and the test image. Any class that has an amount of matches greater than a given threshold are then predicted for the test image.
 
 ### Usage
