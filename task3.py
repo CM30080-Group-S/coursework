@@ -11,6 +11,7 @@ import numpy as np
 from skimage.feature import SIFT, match_descriptors, plot_matches
 from skimage.filters import gaussian
 from skimage.io import imread
+from skimage.transform import estimate_transform, matrix_transform
 from tqdm import tqdm
 
 
@@ -45,19 +46,111 @@ def load_images(path):
 
 def are_local(keypoints, locality_pixels=64, confidence_threshold=0.6):
     """
-    Checks if the matches are local.
+    Checks if the keypoints in the target image are local.
     """
     # Determine the centroid of the matches
     centroid = np.mean(keypoints, axis=0)
     # Calculate the distance of each match to the centroid
     distances = np.linalg.norm(keypoints - centroid, axis=1)
-    print(distances)
     # Check if the majority of the matches are within the threshold
     return np.sum(distances < locality_pixels) > confidence_threshold * len(distances)
 
+def get_best_matches(matches, scene_keypoints, locality_pixels=64):
+    """
+    Returns the highest quality matches.
 
-def main(
-    training_images_path,
+    Args:
+        matches (np.ndarray): The indices of the matching keypoints between the target image and the template image.
+        target_keypoints (np.ndarray): The keypoints of the test image.
+        locality_pixels (int): The maximum distance of a match to the centroid of all matches.
+    """
+    # Get the best target keypoints
+    keypoints = scene_keypoints[matches[:, 0]]
+
+    # Determine the centroid of the matches
+    centroid = np.mean(keypoints, axis=0)
+
+    # Calculate the distance of each match to the centroid
+    distances = np.linalg.norm(keypoints - centroid, axis=1)
+
+    # Get the indices of the matches that are within the threshold
+    indices = np.where(distances < locality_pixels)[0]
+    return matches[indices]
+    
+
+def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
+    """
+    Returns the bounding box of the template image.
+
+    Args:
+        matches (np.ndarray): The indices of the matching keypoints between the template image and the test image.
+        template_keypoints (np.ndarray): The keypoints of the template image.
+        target_keypoints (np.ndarray): The keypoints of the test image.
+        image_size (tuple): The size of the test image.
+    """
+
+    # Find the best matches
+    matches = get_best_matches(matches, scene_keypoints)
+
+    src_points = template_keypoints[matches[:, 1]]
+    dst_points = scene_keypoints[matches[:, 0]]
+
+    # Create a trasformation matrix that maps the source image to the target image
+    tform = estimate_transform("affine", src_points, dst_points)
+
+    # Get the corners of the template image
+    corners = np.array([[0,0], [image_size[0], image_size[1]]])
+
+    # Transform the corners of the template image to the target image
+    transformed_corners = tform(corners)
+
+    # Swap the x and y coordinates
+    transformed_corners = transformed_corners[:, [1, 0]]
+
+    # Return the bounding box of the template image
+    return transformed_corners
+
+def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
+    """
+    Saves the bounding box to a file.
+
+    Args:
+        bounding_boxes (dict(ndarray)): The bounding box of the template image.
+        scene_image (np.ndarray): The test image.
+        scene_image_name (str): The name of the test image.
+        output_path (str): The path to the output directory.
+    """
+    # Create the output directory if it does not exist
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(nrows=1, ncols=1)
+    ax.imshow(scene_image, cmap=plt.cm.gray)
+    for emoji_name, bounding_box in bounding_boxes.items():
+        # Generate other corners for the bounding box
+        bounding_box = np.array([
+            bounding_box[0],
+            [bounding_box[1][0], bounding_box[0][1]],
+            bounding_box[1],
+            [bounding_box[0][0], bounding_box[1][1]]
+        ])
+
+        # Pick a random color for the bounding box
+        np.random.seed(sum([ord(c) for c in emoji_name]))
+        color = np.random.rand(3,)
+
+        # Draw a rectangular patch
+        patch = plt.Polygon(bounding_box, fill=False, edgecolor=color, linewidth=2)
+        ax.add_patch(patch)
+        # Add the label to the patch
+        ax.text(bounding_box[0][0] - 10, bounding_box[0][1], emoji_name, color=color)
+
+
+    # Save the image
+    plt.savefig(output_path + f"{scene_image_name}bounding_box.png")
+    plt.close(fig)
+
+
+def main(training_images_path,
     test_images_path,
     ground_truths_path,
     octaves,
@@ -66,61 +159,56 @@ def main(
     threshold,
     show_boxes=False,
     show_matches=False,
-    verbose=False
-):
+    verbose=False):
     # Load emojis
     emojis = load_images(training_images_path)
     if verbose:
         print(f"Loaded {len(emojis)} emojis.")
 
     # Load test images
-    test_images = load_images(test_images_path)
+    scene_images = load_images(test_images_path)
 
     # Initialize the SIFT detector
     sift = SIFT(n_octaves=octaves, n_scales=scales)
 
     # For each test image, perform SIFT and match with emojis
-    for test_image_name, test_image in tqdm(test_images.items()):
+    for scene_image_name, scene_image in tqdm(scene_images.items()):
         # if test_image_name != "test_image_10.png":
         #     continue
-        sift.detect_and_extract(test_image)
-        source_keypoints = sift.keypoints
-        source_descriptors = sift.descriptors
-        found=[]
+        sift.detect_and_extract(scene_image)
+        scene_keypoints = sift.keypoints
+        scene_descriptors = sift.descriptors
+        bounding_boxes = {}
 
         for emoji_name, emoji in emojis.items():
+            
             sift.detect_and_extract(emoji)
-            target_keypoints = sift.keypoints
-            target_descriptors = sift.descriptors
+            template_keypoints = sift.keypoints
+            template_descriptors = sift.descriptors
 
-            matches = match_descriptors(source_descriptors, target_descriptors, cross_check=True, max_ratio=ratio)
+            matches = match_descriptors(scene_descriptors, template_descriptors, cross_check=True, max_ratio=0.7)
 
             if verbose:
-                print(f"Matches for image {test_image_name} and emoji {emoji_name}: {len(matches)}")
+                print(f"Matches for image {scene_image_name} and emoji {emoji_name}: {len(matches)}")
+            
+            if len(matches) > threshold:
+                # Check locality of matches
+                if are_local(scene_keypoints[matches[:, 0]]):
+                    bounding_box = get_bounding_box(matches, template_keypoints, scene_keypoints, emoji.shape)
+                    bounding_boxes[emoji_name] = bounding_box
 
             if show_matches:
                 # Output image showing lines between matching keypoints
-                if len(matches) > threshold:
-                    # Check locality of matches
-                    if are_local(source_keypoints[matches[:, 0]]):
-                        fig, ax = plt.subplots(nrows=1, ncols=1)
-                        found.append(emoji_name)
-                        # Write the image to disk
-                        Path("data/task3/").mkdir(parents=True, exist_ok=True)
-                        plot_matches(image1=test_image, image2=emoji, keypoints1=source_keypoints, keypoints2=target_keypoints, matches=matches, only_matches=True, ax=ax)
-                        plt.savefig(f"data/task3/{test_image_name}_{emoji_name}.png")
-                        plt.close(fig)
-
-                    # TODO 2: Get bounding box
+                fig, ax = plt.subplots(nrows=1, ncols=1)
+                
+                Path("output/task3/").mkdir(parents=True, exist_ok=True)
+                plot_matches(image1=scene_image, image2=emoji, keypoints1=scene_keypoints, keypoints2=template_keypoints, matches=matches, only_matches=True, ax=ax)
+                plt.savefig(f"output/task3/{scene_image_name}_{emoji_name}_matches.png")
+                plt.close(fig)
 
         # TODO 3: Print the results
-
-        print(test_image_name)
-        for i in found:
-            print(i)
-
-        # For each emoji, perform SIFT and match with the test image
-    # For each match found, draw a rectangle around the emoji
+        
+        output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
