@@ -99,7 +99,7 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     tform = estimate_transform("affine", src_points, dst_points)
 
     # Get the corners of the template image
-    corners = np.array([[0,0], [image_size[0], image_size[1]]])
+    corners = np.array([[0,0], [0, image_size[0]], [image_size[1], image_size[0]], [image_size[1], 0]])
 
     # Transform the corners of the template image to the target image
     transformed_corners = tform(corners)
@@ -126,14 +126,6 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
     fig, ax = plt.subplots(nrows=1, ncols=1)
     ax.imshow(scene_image, cmap=plt.cm.gray)
     for emoji_name, bounding_box in bounding_boxes.items():
-        # Generate other corners for the bounding box
-        bounding_box = np.array([
-            bounding_box[0],
-            [bounding_box[1][0], bounding_box[0][1]],
-            bounding_box[1],
-            [bounding_box[0][0], bounding_box[1][1]]
-        ])
-
         # Pick a random color for the bounding box
         np.random.seed(sum([ord(c) for c in emoji_name]))
         color = np.random.rand(3,)
@@ -173,8 +165,6 @@ def main(training_images_path,
 
     # For each test image, perform SIFT and match with emojis
     for scene_image_name, scene_image in tqdm(scene_images.items()):
-        # if test_image_name != "test_image_10.png":
-        #     continue
         sift.detect_and_extract(scene_image)
         scene_keypoints = sift.keypoints
         scene_descriptors = sift.descriptors
@@ -186,11 +176,12 @@ def main(training_images_path,
             template_keypoints = sift.keypoints
             template_descriptors = sift.descriptors
 
-            matches = match_descriptors(scene_descriptors, template_descriptors, cross_check=True, max_ratio=0.7)
+            matches = match_descriptors(scene_descriptors, template_descriptors, cross_check=True, max_ratio=ratio)
 
             if verbose:
                 print(f"Matches for image {scene_image_name} and emoji {emoji_name}: {len(matches)}")
             
+            # If there are enough matches, check the locality of the matches
             if len(matches) > threshold:
                 # Check locality of matches
                 if are_local(scene_keypoints[matches[:, 0]]):
@@ -207,8 +198,9 @@ def main(training_images_path,
                 plt.close(fig)
 
         # TODO 3: Print the results
-        
-        output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
+
+            if show_boxes:
+                output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -224,7 +216,7 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--scales", help="The number of scales per SIFT octave (default is 4)", default=4, type=int)
     parser.add_argument("-t", "--threshold", help="The number of feature matches required for a class prediction (default is 5)", default=5, type=int)
     parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
-    training_images_path, test_images_path, ground_truths_path, octaves, ratio, scales, threshold, show_boxes, show_matches, verbose = (
+    training_images_path, test_images_path, ground_truths_path, show_boxes, show_matches, octaves, ratio, scales, threshold, verbose = (
         itemgetter(
             "training_images_path",
             "test_images_path",
