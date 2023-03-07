@@ -2,6 +2,7 @@ import argparse
 import os
 import pickle
 import sys
+from time import time
 from collections import defaultdict
 from operator import itemgetter
 from pathlib import Path
@@ -211,7 +212,9 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
     total_tp = 0
     total_fp = 0
     total_acc = []
+    times_taken = []
     for key, test_image in tqdm(test_images.items()):
+        start = time()
         # Preprocess the test image
         test_image = preprocess(test_image)
         annotation_file_path = ground_truths_path + '/' + (key.split('.')[0])
@@ -254,8 +257,8 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
             # TODO 2: Bounding boxes
             if verbose:
                 print(f"Bounding box: {bounding_box}")
-
-        # TODO 3: Timing
+        end = time()
+        times_taken.append(end - start)
         tp, fp, acc = evaluate(matches, templates, annotation_file_path)
         total_tp += tp
         total_fp += fp
@@ -264,6 +267,7 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
     print(f"True positive rate: {total_tp / (total_tp + total_fp)} (total: {total_tp})")
     print(f"False positive rate: {total_fp / (total_tp + total_fp)} (total: {total_fp})")
     print(f"Accuracy: {np.mean(total_acc)}")
+    print(f"Average time taken: {np.mean(times_taken):.2f}s")
 
         
 if __name__ == "__main__":
