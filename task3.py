@@ -134,11 +134,11 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
         patch = plt.Polygon(bounding_box, fill=False, edgecolor=color, linewidth=2)
         ax.add_patch(patch)
         # Add the label to the patch
-        ax.text(bounding_box[0][0] - 10, bounding_box[0][1], emoji_name, color=color)
+        ax.text(bounding_box[0][0], bounding_box[0][1] + 10, emoji_name, color=color)
 
 
     # Save the image
-    plt.savefig(output_path + f"{scene_image_name}bounding_box.png")
+    plt.savefig(output_path + f"{scene_image_name}_bounding_box.png")
     plt.close(fig)
 
 
