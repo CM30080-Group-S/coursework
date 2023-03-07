@@ -71,7 +71,7 @@ python task3.py [-b] [-m] [-o] [-r] [-s] [-t] [-v] <training_images> <test_image
 
 ### Example
 ```
-python task3.py data/task2/training data/task3/test/images data/task3/test/annotations
+python task3.py data/task2/training data/task3/images data/task3/annotations
 ```
 
 ## Authors
