@@ -2,10 +2,10 @@ import argparse
 import os
 import pickle
 import sys
-from time import time
 from collections import defaultdict
 from operator import itemgetter
 from pathlib import Path
+from time import time
 
 import numpy as np
 from skimage.feature import match_template
@@ -148,6 +148,8 @@ def compute_iou(box_1,box_2):
     assert union > 0, "Union must be greater than zero"
     return intersect / union
 
+def parse_emoji_name(emoji_name):
+    return emoji_name.rsplit(".")[0].split("-",1)[1]
 
 def evaluate(matches, templates, annotations_file):
     # Read in the data from the annotations
@@ -177,7 +179,7 @@ def evaluate(matches, templates, annotations_file):
         bounding_box = compute_bounding_box(match, templates)
 
         # Extract the emoji name from the emoji file name
-        emoji = emoji.rsplit(".")[0].split("-",1)[1]
+        emoji = parse_emoji_name(emoji)
 
         # Determine if we have a: true positive, false positive
         if emoji in annotations.keys():
@@ -189,7 +191,7 @@ def evaluate(matches, templates, annotations_file):
 
     # Loop through the annotatioins that were not matched
     for annotation in annotations.keys():
-        if annotation not in [(match[0].rsplit(".")[0].split("-",1)[1]) for match in matches]:
+        if annotation not in [parse_emoji_name(match[0]) for match in matches]:
             accuracy.append(0)
     
     # Compute the intersection over union of the bounding boxes
