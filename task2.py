@@ -133,13 +133,13 @@ def compute_iou(box_1,box_2):
     Compute the intersection over union of the matching bounding boxes.
     """
 
-    # bl is the bottom left of the given box and tr is the top right
-    bl, tr, x, y = (0, 1, 0, 1)
+    # tl is the top left of the given box and br is the bottom right
+    tl, br, x, y = (0, 1, 0, 1)
 
-    box_1_area = (box_1[tr][x] - box_1[bl][x]) * (box_1[tr][y] - box_1[bl][y])
-    box_2_area = (box_2[tr][x] - box_2[bl][x]) * (box_2[tr][y] - box_2[bl][y])
+    box_1_area = (box_1[br][x] - box_1[tl][x]) * (box_1[br][y] - box_1[tl][y])
+    box_2_area = (box_2[br][x] - box_2[tl][x]) * (box_2[br][y] - box_2[tl][y])
 
-    intersect = (min(box_1[tr][x], box_2[tr][x]) - max(box_1[bl][x], box_2[bl][x])) * (min(box_1[tr][y], box_2[tr][y]) - max(box_1[bl][y], box_2[bl][y]))
+    intersect = (min(box_1[br][x], box_2[br][x]) - max(box_1[tl][x], box_2[tl][x])) * (min(box_1[br][y], box_2[br][y]) - max(box_1[tl][y], box_2[tl][y]))
 
     # If there is no intersection
     if intersect < 0:

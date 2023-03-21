@@ -1,8 +1,6 @@
 import argparse
 import os
-import pickle
 import sys
-from collections import defaultdict
 from operator import itemgetter
 from pathlib import Path
 from time import time
@@ -10,9 +8,8 @@ from time import time
 import matplotlib.pyplot as plt
 import numpy as np
 from skimage.feature import SIFT, match_descriptors, plot_matches
-from skimage.filters import gaussian
 from skimage.io import imread
-from skimage.transform import estimate_transform, matrix_transform
+from skimage.transform import estimate_transform
 from tqdm import tqdm
 
 
@@ -97,10 +94,10 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     dst_points = scene_keypoints[matches[:, 0]]
 
     # Create a trasformation matrix that maps the source image to the target image
-    tform = estimate_transform("affine", src_points, dst_points)
+    tform = estimate_transform("similarity", src_points, dst_points)
 
     # Get the corners of the template image
-    corners = np.array([[0,0], [image_size[0], image_size[1]]])
+    corners = np.array([[0,0], [0, image_size[0]], [image_size[1], image_size[0]], [image_size[1], 0]])
 
     # Transform the corners of the template image to the target image
     transformed_corners = tform(corners)
@@ -108,8 +105,15 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     # Swap the x and y coordinates
     transformed_corners = transformed_corners[:, [1, 0]]
 
+    bl = (np.min(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+    tr = (np.max(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+
+    tl = (np.min(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+    br = (np.max(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+
+    print (bl, tr)
     # Return the bounding box of the template image
-    return transformed_corners
+    return (bl, tl, tr, br)
 
 def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
     """
@@ -127,14 +131,6 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
     fig, ax = plt.subplots(nrows=1, ncols=1)
     ax.imshow(scene_image, cmap=plt.cm.gray)
     for emoji_name, bounding_box in bounding_boxes.items():
-        # Generate other corners for the bounding box
-        bounding_box = np.array([
-            bounding_box[0],
-            [bounding_box[1][0], bounding_box[0][1]],
-            bounding_box[1],
-            [bounding_box[0][0], bounding_box[1][1]]
-        ])
-
         # Pick a random color for the bounding box
         np.random.seed(sum([ord(c) for c in emoji_name]))
         color = np.random.rand(3,)
@@ -145,7 +141,6 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
         # Add the label to the patch
         ax.text(bounding_box[0][0] - 10, bounding_box[0][1], emoji_name, color=color)
 
-
     # Save the image
     plt.savefig(output_path + f"{scene_image_name}bounding_box.png")
     plt.close(fig)
@@ -153,18 +148,18 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
 def parse_emoji_name(emoji_name):
     return emoji_name.rsplit(".")[0].split("-",1)[1]
 
-def compute_iou(box_1, box_2):
+def compute_iou(box_1,box_2):
     """
     Compute the intersection over union of the matching bounding boxes.
     """
 
-    # bl is the bottom left of the given box and tr is the top right
-    bl, tr, x, y = (0, 1, 0, 1)
+    # tl is the top left of the given box and br is the bottom right
+    tl, br, x, y = (0, 1, 0, 1)
 
-    box_1_area = np.abs(box_1[tr][x] - box_1[bl][x]) * np.abs(box_1[tr][y] - box_1[bl][y])
-    box_2_area = np.abs(box_2[tr][x] - box_2[bl][x]) * np.abs(box_2[tr][y] - box_2[bl][y])
+    box_1_area = (box_1[br][x] - box_1[tl][x]) * (box_1[br][y] - box_1[tl][y])
+    box_2_area = (box_2[br][x] - box_2[tl][x]) * (box_2[br][y] - box_2[tl][y])
 
-    intersect = (min(box_1[tr][x], box_2[tr][x]) - max(box_1[bl][x], box_2[bl][x])) * (min(box_1[tr][y], box_2[tr][y]) - max(box_1[bl][y], box_2[bl][y]))
+    intersect = (min(box_1[br][x], box_2[br][x]) - max(box_1[tl][x], box_2[tl][x])) * (min(box_1[br][y], box_2[br][y]) - max(box_1[tl][y], box_2[tl][y]))
 
     # If there is no intersection
     if intersect < 0:
@@ -199,11 +194,12 @@ def evaluate(bounding_boxes, annotations_file):
     # Determine if we have a: true positive, false positive for each match
     for class_name, bounding_box in bounding_boxes.items():
         # Extract the emoji name from the emoji file name
-        emoji = parse_emoji_name(class_name)
+        emoji = class_name
         # Determine if we have a: true positive, false positive
         if emoji in annotations.keys():
             true_positives += 1
-            accuracy.append(compute_iou(bounding_box, annotations[emoji]))
+            print("emoji:",emoji)
+            accuracy.append(compute_iou((bounding_box[1], bounding_box[3]), annotations[emoji]))
         else:
             false_positives += 1
             accuracy.append(0)
@@ -213,6 +209,7 @@ def evaluate(bounding_boxes, annotations_file):
         if annotation not in bounding_boxes.keys():
             accuracy.append(0)
 
+    print("accuracy:", accuracy)
     # Compute the intersection over union of the bounding boxes
     overall_accuracy = sum(accuracy) / len(accuracy)
 
@@ -271,6 +268,8 @@ def main(training_images_path,
         bounding_boxes = {}
 
         for emoji_name, emoji in emojis.items():
+
+            emoji_name = parse_emoji_name(emoji_name)
             
             sift.detect_and_extract(emoji)
             template_keypoints = sift.keypoints
@@ -299,6 +298,7 @@ def main(training_images_path,
         # TODO 3: Print the results
         end = time()
         times_taken.append(end - start)
+        print("Bounding boxes: ", bounding_boxes)
         tp, fp, acc = evaluate(bounding_boxes, annotation_file_path)
         total_tp += tp
         total_fp += fp
@@ -306,6 +306,7 @@ def main(training_images_path,
     
         output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
     
+    print(total_acc)
     print(f"True positive rate: {total_tp / (total_tp + total_fp)} (total: {total_tp})")
     print(f"False positive rate: {total_fp / (total_tp + total_fp)} (total: {total_fp})")
     print(f"Accuracy: {np.mean(total_acc)}")
