@@ -131,8 +131,6 @@ def main(image_path, ground_truth_path, verbose=False):
 
     # Evaluate the predictions
     average_accuracy = evaluate(predictions, ground_truth, verbose)
-    if verbose:
-        print(f"Average accuracy: {average_accuracy * 100:.2f}%")
     return average_accuracy
     
 
