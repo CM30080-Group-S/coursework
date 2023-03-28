@@ -5,6 +5,7 @@ import sys
 from collections import defaultdict
 from operator import itemgetter
 from pathlib import Path
+from time import time
 
 import numpy as np
 from skimage.feature import match_template
@@ -132,13 +133,13 @@ def compute_iou(box_1,box_2):
     Compute the intersection over union of the matching bounding boxes.
     """
 
-    # bl is the bottom left of the given box and tr is the top right
-    bl, tr, x, y = (0, 1, 0, 1)
+    # tl is the top left of the given box and br is the bottom right
+    tl, br, x, y = (0, 1, 0, 1)
 
-    box_1_area = (box_1[tr][x] - box_1[bl][x]) * (box_1[tr][y] - box_1[bl][y])
-    box_2_area = (box_2[tr][x] - box_2[bl][x]) * (box_2[tr][y] - box_2[bl][y])
+    box_1_area = (box_1[br][x] - box_1[tl][x]) * (box_1[br][y] - box_1[tl][y])
+    box_2_area = (box_2[br][x] - box_2[tl][x]) * (box_2[br][y] - box_2[tl][y])
 
-    intersect = (min(box_1[tr][x], box_2[tr][x]) - max(box_1[bl][x], box_2[bl][x])) * (min(box_1[tr][y], box_2[tr][y]) - max(box_1[bl][y], box_2[bl][y]))
+    intersect = (min(box_1[br][x], box_2[br][x]) - max(box_1[tl][x], box_2[tl][x])) * (min(box_1[br][y], box_2[br][y]) - max(box_1[tl][y], box_2[tl][y]))
 
     # If there is no intersection
     if intersect < 0:
@@ -147,6 +148,8 @@ def compute_iou(box_1,box_2):
     assert union > 0, "Union must be greater than zero"
     return intersect / union
 
+def parse_emoji_name(emoji_name):
+    return emoji_name.rsplit(".")[0].split("-",1)[1]
 
 def evaluate(matches, templates, annotations_file):
     # Read in the data from the annotations
@@ -176,7 +179,7 @@ def evaluate(matches, templates, annotations_file):
         bounding_box = compute_bounding_box(match, templates)
 
         # Extract the emoji name from the emoji file name
-        emoji = emoji.rsplit(".")[0].split("-",1)[1]
+        emoji = parse_emoji_name(emoji)
 
         # Determine if we have a: true positive, false positive
         if emoji in annotations.keys():
@@ -188,7 +191,7 @@ def evaluate(matches, templates, annotations_file):
 
     # Loop through the annotatioins that were not matched
     for annotation in annotations.keys():
-        if annotation not in [(match[0].rsplit(".")[0].split("-",1)[1]) for match in matches]:
+        if annotation not in [parse_emoji_name(match[0]) for match in matches]:
             accuracy.append(0)
     
     # Compute the intersection over union of the bounding boxes
@@ -211,7 +214,9 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
     total_tp = 0
     total_fp = 0
     total_acc = []
+    times_taken = []
     for key, test_image in tqdm(test_images.items()):
+        start = time()
         # Preprocess the test image
         test_image = preprocess(test_image)
         annotation_file_path = ground_truths_path + '/' + (key.split('.')[0])
@@ -254,8 +259,8 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
             # TODO 2: Bounding boxes
             if verbose:
                 print(f"Bounding box: {bounding_box}")
-
-        # TODO 3: Timing
+        end = time()
+        times_taken.append(end - start)
         tp, fp, acc = evaluate(matches, templates, annotation_file_path)
         total_tp += tp
         total_fp += fp
@@ -264,6 +269,7 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
     print(f"True positive rate: {total_tp / (total_tp + total_fp)} (total: {total_tp})")
     print(f"False positive rate: {total_fp / (total_tp + total_fp)} (total: {total_fp})")
     print(f"Accuracy: {np.mean(total_acc)}")
+    print(f"Average time taken: {np.mean(times_taken):.2f}s")
 
         
 if __name__ == "__main__":
