@@ -36,9 +36,10 @@ Given an image containing rotated and scaled variants of images from a given ban
 
 ### Usage
 ```
-python task2.py [-a] [-l] [-t] [-v] <training_images> <test_image_path> <ground_truth_path>
+python task2.py [-a] [-b] [-l] [-t] [-v] <training_images> <test_image_path> <ground_truth_path>
 ```
 - `-a` - Optional flag to specify the number of angles between 0 and 360 to use for image rotations, the default is 1
+- `-b` - Optional flag to show the bounding boxes
 - `-l` - Optional flag to specify the number of levels of the Gaussian pyramid, the default is 4
 - `-t` - Optional flag to specify the threshold required for a match
 - `-v` - Optional flag to enable verbose mode

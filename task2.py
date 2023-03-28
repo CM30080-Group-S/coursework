@@ -8,6 +8,7 @@ from pathlib import Path
 from time import time
 
 import numpy as np
+from matplotlib import pyplot as plt
 from skimage.feature import match_template
 from skimage.io import imread
 from skimage.transform import pyramid_gaussian, rotate
@@ -199,8 +200,46 @@ def evaluate(matches, templates, annotations_file):
 
     return true_positives, false_positives, overall_accuracy
 
+def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
+    """
+    Saves the bounding box to a file.
 
-def main(training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose=False):
+    Args:
+        bounding_boxes (dict(ndarray)): The bounding box of the template image.
+        scene_image (np.ndarray): The test image.
+        scene_image_name (str): The name of the test image.
+        output_path (str): The path to the output directory.
+    """
+    # Create the output directory if it does not exist
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots(nrows=1, ncols=1)
+    ax.imshow(scene_image, cmap=plt.cm.gray)
+    for emoji_name, bounding_box in bounding_boxes.items():
+        # Add missing coordinates to the bounding box
+        bounding_box = np.array([
+            [bounding_box[0][0], bounding_box[0][1]],
+            [bounding_box[1][0], bounding_box[0][1]],
+            [bounding_box[1][0], bounding_box[1][1]],
+            [bounding_box[0][0], bounding_box[1][1]]
+        ])
+
+        # Pick a random color for the bounding box
+        np.random.seed(sum([ord(c) for c in emoji_name]))
+        color = np.random.rand(3,)
+
+        # Draw a rectangular patch
+        patch = plt.Polygon(bounding_box, fill=False, edgecolor=color, linewidth=2)
+        ax.add_patch(patch)
+        # Add the label to the patch
+        ax.text(bounding_box[0][0], bounding_box[0][1] + 10, emoji_name, color=color)
+
+
+    # Save the image
+    plt.savefig(output_path + f"{scene_image_name}_bounding_box.png")
+    plt.close(fig)
+
+def main(training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose, show_boxes):
     training_images = load_images(training_images_path)
 
     # Get template variants of each emoji
@@ -229,6 +268,7 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
 
         # For each pyramid
         matches = []
+        bounding_boxes = {}
         for emoji, emoji_templates in templates.items():
             # For each rotated image
             for index, template in enumerate(emoji_templates):
@@ -255,10 +295,16 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
             if verbose:
                 print(f"Found match for {emoji}, variant {index + 1} with score {result.max()}")
             # Get the bounding box
-            bounding_box = compute_bounding_box(match,templates)
-            # TODO 2: Bounding boxes
+            bounding_box = compute_bounding_box(match, templates)
+            bounding_boxes[emoji] = bounding_box
+
             if verbose:
                 print(f"Bounding box: {bounding_box}")
+
+        # Output the bounding boxes
+        if show_boxes:
+            output_bounding_boxes(bounding_boxes, test_image, key, "output/task2/")
+            
         end = time()
         times_taken.append(end - start)
         tp, fp, acc = evaluate(matches, templates, annotation_file_path)
@@ -280,19 +326,21 @@ if __name__ == "__main__":
     parser.add_argument("test_images_path", help="Path to the test images")
     parser.add_argument("ground_truths_path", help="Path to the ground truths")
     parser.add_argument("-a", "--angles", help="Angles between 0 and 360 to use for image rotations (default is 1)", default=1, type=int)
+    parser.add_argument("-b", "--boxes", help="Show the bounding boxes", action="store_true")
     parser.add_argument("-l", "--levels", help="Gaussian pyramid levels (default is 4)", default=4, type=int)
     parser.add_argument("-t", "--threshold", help="Threshold required for a match (default is 0.95)", default=0.95, type=float)
     parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
-    training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose = (
+    training_images_path, test_images_path, ground_truths_path, angles, show_boxes, levels, threshold, verbose = (
         itemgetter(
             "training_images_path",
             "test_images_path",
             "ground_truths_path",
             "angles",
+            "boxes",
             "levels",
             "threshold",
             "verbose"
         )(vars(parser.parse_args()))
     )
 
-    main(training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose)
+    main(training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose, show_boxes)
