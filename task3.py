@@ -1,17 +1,15 @@
 import argparse
 import os
-import pickle
 import sys
-from collections import defaultdict
 from operator import itemgetter
 from pathlib import Path
+from time import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 from skimage.feature import SIFT, match_descriptors, plot_matches
-from skimage.filters import gaussian
 from skimage.io import imread
-from skimage.transform import estimate_transform, matrix_transform
+from skimage.transform import estimate_transform
 from tqdm import tqdm
 
 
@@ -107,8 +105,15 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     # Swap the x and y coordinates
     transformed_corners = transformed_corners[:, [1, 0]]
 
+    bl = (np.min(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+    tr = (np.max(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+
+    tl = (np.min(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+    br = (np.max(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+
+    print (bl, tr)
     # Return the bounding box of the template image
-    return transformed_corners
+    return (bl, tl, tr, br)
 
 def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
     """
@@ -136,10 +141,80 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
         # Add the label to the patch
         ax.text(bounding_box[0][0] - 10, bounding_box[0][1], emoji_name, color=color)
 
-
     # Save the image
     plt.savefig(output_path + f"{scene_image_name}bounding_box.png")
     plt.close(fig)
+
+def parse_emoji_name(emoji_name):
+    return emoji_name.rsplit(".")[0].split("-",1)[1]
+
+def compute_iou(box_1,box_2):
+    """
+    Compute the intersection over union of the matching bounding boxes.
+    """
+
+    # tl is the top left of the given box and br is the bottom right
+    tl, br, x, y = (0, 1, 0, 1)
+
+    box_1_area = (box_1[br][x] - box_1[tl][x]) * (box_1[br][y] - box_1[tl][y])
+    box_2_area = (box_2[br][x] - box_2[tl][x]) * (box_2[br][y] - box_2[tl][y])
+
+    intersect = (min(box_1[br][x], box_2[br][x]) - max(box_1[tl][x], box_2[tl][x])) * (min(box_1[br][y], box_2[br][y]) - max(box_1[tl][y], box_2[tl][y]))
+
+    # If there is no intersection
+    if intersect < 0:
+        intersect = 0
+    union = box_1_area + box_2_area - intersect
+    assert union > 0, "Union must be greater than zero"
+    return intersect / union
+
+def evaluate(bounding_boxes, annotations_file):
+    # Read in the data from the annotations
+    annotations = {}
+    with open(annotations_file, "r") as f:
+        lines = f.readlines()
+        for annotation in lines:
+            annotation = annotation.split(",", 1)
+            class_name = annotation[0]
+            bounding_box = annotation[1].strip()
+
+            bounding_box = bounding_box.split(",")
+
+            start_x = int(bounding_box[0].strip()[1:])
+            start_y = int(bounding_box[1].strip()[:-1])
+            end_x = int(bounding_box[2].strip()[1:])
+            end_y = int(bounding_box[3].strip()[:-1])
+
+            annotations[class_name] = ((start_x, start_y), (end_x, end_y))
+
+    true_positives = 0
+    false_positives = 0
+    accuracy = []
+
+    # Determine if we have a: true positive, false positive for each match
+    for class_name, bounding_box in bounding_boxes.items():
+        # Extract the emoji name from the emoji file name
+        emoji = class_name
+        # Determine if we have a: true positive, false positive
+        if emoji in annotations.keys():
+            true_positives += 1
+            print("emoji:",emoji)
+            accuracy.append(compute_iou((bounding_box[1], bounding_box[3]), annotations[emoji]))
+        else:
+            false_positives += 1
+            accuracy.append(0)
+
+    # Loop through the annotatioins that were not matched
+    for annotation in annotations.keys():
+        if annotation not in bounding_boxes.keys():
+            accuracy.append(0)
+
+    print("accuracy:", accuracy)
+    # Compute the intersection over union of the bounding boxes
+    overall_accuracy = sum(accuracy) / len(accuracy)
+
+    return true_positives, false_positives, overall_accuracy
+
 
 
 def main(training_images_path,
@@ -163,25 +238,48 @@ def main(training_images_path,
     # Initialize the SIFT detector
     sift = SIFT(n_octaves=octaves, n_scales=scales)
 
+    times_taken = []
+    total_tp = 0
+    total_fp = 0
+    total_acc = []
+
+    a = 0
     # For each test image, perform SIFT and match with emojis
     for scene_image_name, scene_image in tqdm(scene_images.items()):
+        if a > 3:
+            break
+
+        a += 1
+
+        annotation_file_path = ground_truths_path + '/' + (scene_image_name.split('.')[0])
+        if (Path(annotation_file_path + '.txt')).exists():
+            annotation_file_path += '.txt'
+        elif (Path(annotation_file_path + '.csv')).exists():
+            annotation_file_path += '.csv'
+        else:
+            raise FileNotFoundError(f'No matching annotations found for test image {scene_image_name}, continuing to next test image...')
+
+        start = time()
+        # if test_image_name != "test_image_10.png":
+        #     continue
         sift.detect_and_extract(scene_image)
         scene_keypoints = sift.keypoints
         scene_descriptors = sift.descriptors
         bounding_boxes = {}
 
         for emoji_name, emoji in emojis.items():
+
+            emoji_name = parse_emoji_name(emoji_name)
             
             sift.detect_and_extract(emoji)
             template_keypoints = sift.keypoints
             template_descriptors = sift.descriptors
 
-            matches = match_descriptors(scene_descriptors, template_descriptors, cross_check=True, max_ratio=ratio)
+            matches = match_descriptors(scene_descriptors, template_descriptors, cross_check=True, max_ratio=0.7)
 
             if verbose:
                 print(f"Matches for image {scene_image_name} and emoji {emoji_name}: {len(matches)}")
             
-            # If there are enough matches, check the locality of the matches
             if len(matches) > threshold:
                 # Check locality of matches
                 if are_local(scene_keypoints[matches[:, 0]]):
@@ -198,9 +296,22 @@ def main(training_images_path,
                 plt.close(fig)
 
         # TODO 3: Print the results
-
-            if show_boxes:
-                output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
+        end = time()
+        times_taken.append(end - start)
+        print("Bounding boxes: ", bounding_boxes)
+        tp, fp, acc = evaluate(bounding_boxes, annotation_file_path)
+        total_tp += tp
+        total_fp += fp
+        total_acc.append(acc)
+    
+        output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
+    
+    print(total_acc)
+    print(f"True positive rate: {total_tp / (total_tp + total_fp)} (total: {total_tp})")
+    print(f"False positive rate: {total_fp / (total_tp + total_fp)} (total: {total_fp})")
+    print(f"Accuracy: {np.mean(total_acc)}")
+    print(f"Average time taken: {np.mean(times_taken):.2f}s")
+    print(f"Average time taken: {round(np.mean(times_taken), 2)}s")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
