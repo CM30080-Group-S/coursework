@@ -243,13 +243,8 @@ def main(training_images_path,
     total_fp = 0
     total_acc = []
 
-    a = 0
     # For each test image, perform SIFT and match with emojis
     for scene_image_name, scene_image in tqdm(scene_images.items()):
-        if a > 3:
-            break
-
-        a += 1
 
         annotation_file_path = ground_truths_path + '/' + (scene_image_name.split('.')[0])
         if (Path(annotation_file_path + '.txt')).exists():
