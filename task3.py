@@ -96,7 +96,7 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     dst_points = scene_keypoints[matches[:, 0]]
 
     # Create a trasformation matrix that maps the source image to the target image
-    tform = estimate_transform("affine", src_points, dst_points)
+    tform = estimate_transform("similarity", src_points, dst_points)
 
     # Get the corners of the template image
     corners = np.array([[0,0], [0, image_size[0]], [image_size[1], image_size[0]], [image_size[1], 0]])
