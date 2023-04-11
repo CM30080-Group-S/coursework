@@ -105,15 +105,14 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     # Swap the x and y coordinates
     transformed_corners = transformed_corners[:, [1, 0]]
 
-    bl = (np.min(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
-    tr = (np.max(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+    bottom_left = (np.min(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+    top_right = (np.max(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
 
-    tl = (np.min(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
-    br = (np.max(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+    top_left = (np.min(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+    bottom_right = (np.max(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
 
-    print (bl, tr)
     # Return the bounding box of the template image
-    return (bl, tl, tr, br)
+    return (bottom_left, top_left, top_right, bottom_right)
 
 def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
     """
