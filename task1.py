@@ -11,7 +11,8 @@ from skimage.transform import hough_line, hough_line_peaks
 
 def load_images(path):
     """
-    Loads images from a given path and returns them as a dictionary of numpy arrays, where the key is the filename.
+    Loads images from a given path and returns them as a dictionary of numpy
+    arrays, where the key is the filename.
     """
     if not path.endswith("/"):
         path += "/"
@@ -34,15 +35,18 @@ def load_images(path):
     except OSError:
         print(f"Error: The path {path} is not a valid path.")
         sys.exit(1)
-    except:
-        print(f"Error: An unexpected error occurred while loading the images.")
+    except Exception:
+        print("Error: An unexpected error occurred while loading the images.")
         sys.exit(1)
 
 def load_ground_truth(path):
+    """
+    Load the ground truth angle data from a given path.
+    """
     try:
         angles = {}
-        with open(path, "r") as f:
-            for line in f:
+        with open(path, "r", encoding='utf8') as file:
+            for line in file:
                 line = line.split(",")
                 angles[line[0]] = float(line[1])
         return angles
@@ -55,8 +59,8 @@ def load_ground_truth(path):
     except OSError:
         print(f"Error: The path {path} is not a valid path.")
         sys.exit(1)
-    except:
-        print(f"Error: An unexpected error occurred while loading the ground truth.")
+    except Exception:
+        print("Error: An unexpected error occurred while loading the ground truth.")
         sys.exit(1)
 
 def hough_transform(image):
@@ -100,8 +104,8 @@ def get_angle(line_1, line_2):
     """
     Returns the angle between two lines in radians.
     """
-    x0_1, y0_1, angle_1, dist_1 = line_1
-    x0_2, y0_2, angle_2, dist_2 = line_2
+    angle_1 = line_1[2]
+    angle_2 = line_2[2]
     return np.abs(angle_1 - angle_2)
 
 
@@ -135,13 +139,21 @@ def main(image_path, ground_truth_path, verbose=False):
     
 
 if __name__ == "__main__":
-    # TODO get this to work with single images and ground truth values
     parser = argparse.ArgumentParser(
-        description='''Task 1: Measuring the angle between two lines in an image using the Hough transform and the RANSAC algorithm. The angle is measured in degrees and the accuracy is measured as the relative error between the predicted angle and the ground truth angle. The accuracy is expressed as a percentage. The average accuracy is the average of the accuracies of all images. The images are located in the folder "data" and the ground truth is located in the file "list.txt''',
+        description='''
+        Task 1: Measuring the angle between two lines in an image using the
+        Hough transform and the RANSAC algorithm. The angle is measured in
+        degrees and the accuracy is measured as the relative error between the
+        predicted angle and the ground truth angle. The accuracy is expressed
+        as a percentage. The average accuracy is the average of the accuracies
+        of all images. The images are located in the folder "data" and the
+        ground truth is located in the file "list.txt
+        ''',
     )
     parser.add_argument("image_path", help="Path to the images")
     parser.add_argument("ground_truth_path", help="Path to the ground truth")
-    parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
-    image_path, ground_truth_path, verbose = itemgetter("image_path", "ground_truth_path", "verbose")(vars(parser.parse_args()))
-    average_accuracy = main(image_path, ground_truth_path, verbose)
-    print(f"Average accuracy: {average_accuracy * 100:.2f}%")
+    parser.add_argument("-v", "--verbose", help="Increase output verbosity",
+                        action="store_true")
+    args= parser.parse_args()
+    accuracy = main(args.image_path, args.ground_truth_path, args.verbose)
+    print(f"Average accuracy: {accuracy * 100:.2f}%")

@@ -15,7 +15,8 @@ from tqdm import tqdm
 
 def load_images(path):
     """
-    Loads training images from a given path and returns them as a dictionary of numpy arrays, where the key is the filename.
+    Loads training images from a given path and returns them as a dictionary of
+    numpy arrays, where the key is the filename.
     """
     if not path.endswith("/"):
         path += "/"
@@ -58,9 +59,11 @@ def get_best_matches(matches, scene_keypoints, locality_pixels=64):
     Returns the highest quality matches.
 
     Args:
-        matches (np.ndarray): The indices of the matching keypoints between the target image and the template image.
+        matches (np.ndarray): The indices of the matching keypoints between the
+                              target image and the template image.
         target_keypoints (np.ndarray): The keypoints of the test image.
-        locality_pixels (int): The maximum distance of a match to the centroid of all matches.
+        locality_pixels (int): The maximum distance of a match to the centroid
+                               of all matches.
     """
     # Get the best target keypoints
     keypoints = scene_keypoints[matches[:, 0]]
@@ -81,7 +84,8 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     Returns the bounding box of the template image.
 
     Args:
-        matches (np.ndarray): The indices of the matching keypoints between the template image and the test image.
+        matches (np.ndarray): The indices of the matching keypoints between the
+                              template image and the test image.
         template_keypoints (np.ndarray): The keypoints of the template image.
         target_keypoints (np.ndarray): The keypoints of the test image.
         image_size (tuple): The size of the test image.
@@ -93,11 +97,13 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     src_points = template_keypoints[matches[:, 1]]
     dst_points = scene_keypoints[matches[:, 0]]
 
-    # Create a trasformation matrix that maps the source image to the target image
+    # Create a trasformation matrix that maps the source image to the target
+    # image
     tform = estimate_transform("similarity", src_points, dst_points)
 
     # Get the corners of the template image
-    corners = np.array([[0,0], [0, image_size[0]], [image_size[1], image_size[0]], [image_size[1], 0]])
+    corners = np.array([[0,0], [0, image_size[0]],
+                        [image_size[1],image_size[0]], [image_size[1], 0]])
 
     # Transform the corners of the template image to the target image
     transformed_corners = tform(corners)
@@ -105,16 +111,21 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     # Swap the x and y coordinates
     transformed_corners = transformed_corners[:, [1, 0]]
 
-    bottom_left = (np.min(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
-    top_right = (np.max(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
+    bottom_left = (np.min(transformed_corners[:, 0]),
+                   np.max(transformed_corners[:, 1]))
+    top_right = (np.max(transformed_corners[:, 0]),
+                 np.min(transformed_corners[:, 1]))
 
-    top_left = (np.min(transformed_corners[:, 0]), np.min(transformed_corners[:, 1]))
-    bottom_right = (np.max(transformed_corners[:, 0]), np.max(transformed_corners[:, 1]))
+    top_left = (np.min(transformed_corners[:, 0]),
+                np.min(transformed_corners[:, 1]))
+    bottom_right = (np.max(transformed_corners[:, 0]),
+                    np.max(transformed_corners[:, 1]))
 
     # Return the bounding box of the template image
     return (bottom_left, top_left, top_right, bottom_right)
 
-def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
+def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
+                          output_path):
     """
     Saves the bounding box to a file.
 
@@ -135,10 +146,12 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
         color = np.random.rand(3,)
 
         # Draw a rectangular patch
-        patch = plt.Polygon(bounding_box, fill=False, edgecolor=color, linewidth=2)
+        patch = plt.Polygon(bounding_box, fill=False, edgecolor=color,
+                            linewidth=2)
         ax.add_patch(patch)
         # Add the label to the patch
-        ax.text(bounding_box[0][0], bounding_box[0][1] + 10, emoji_name, color=color)
+        ax.text(bounding_box[0][0], bounding_box[0][1] + 10, emoji_name,
+                color=color)
 
     # Save the image
     plt.savefig(output_path + f"{scene_image_name}_bounding_box.png")
@@ -198,7 +211,8 @@ def evaluate(bounding_boxes, annotations_file):
         if emoji in annotations.keys():
             true_positives += 1
             print("emoji:",emoji)
-            accuracy.append(compute_iou((bounding_box[1], bounding_box[3]), annotations[emoji]))
+            accuracy.append(compute_iou((bounding_box[1], bounding_box[3]),
+                                        annotations[emoji]))
         else:
             false_positives += 1
             accuracy.append(0)
@@ -235,7 +249,21 @@ def main(training_images_path,
     scene_images = load_images(test_images_path)
 
     # Initialize the SIFT detector
-    sift = SIFT(n_octaves=octaves, n_scales=scales)
+    sift = SIFT(
+        n_octaves=octaves,
+        n_scales=scales,
+        upsampling=2,
+        sigma_min=1.6,
+        sigma_in=0.5,
+        c_dog=0.04/3,
+        c_edge=10,
+        c_max=0.8,
+        lambda_ori=1.5,
+        lambda_descr=6,
+        n_bins=36,
+        n_hist=4,
+        n_ori=8
+    )
 
     times_taken = []
     total_tp = 0
@@ -251,7 +279,10 @@ def main(training_images_path,
         elif (Path(annotation_file_path + '.csv')).exists():
             annotation_file_path += '.csv'
         else:
-            raise FileNotFoundError(f'No matching annotations found for test image {scene_image_name}, continuing to next test image...')
+            raise FileNotFoundError(f"""
+            No matching annotations found for test image {scene_image_name},
+            continuing to next test image...
+            """)
 
         start = time()
         # if test_image_name != "test_image_10.png":
@@ -269,15 +300,28 @@ def main(training_images_path,
             template_keypoints = sift.keypoints
             template_descriptors = sift.descriptors
 
-            matches = match_descriptors(scene_descriptors, template_descriptors, cross_check=True, max_ratio=0.7)
+            matches = match_descriptors(
+                scene_descriptors,
+                template_descriptors,
+                cross_check=True,
+                max_ratio=0.7,
+                metric="euclidean",
+                p=2,
+                max_distance=np.inf,
+            )
 
             if verbose:
-                print(f"Matches for image {scene_image_name} and emoji {emoji_name}: {len(matches)}")
+                print(f"""
+                Matches for image {scene_image_name} and emoji {emoji_name}:
+                {len(matches)}
+                """)
             
             if len(matches) > threshold:
                 # Check locality of matches
                 if are_local(scene_keypoints[matches[:, 0]]):
-                    bounding_box = get_bounding_box(matches, template_keypoints, scene_keypoints, emoji.shape)
+                    bounding_box = get_bounding_box(matches, template_keypoints,
+                                                    scene_keypoints,
+                                                    emoji.shape)
                     bounding_boxes[emoji_name] = bounding_box
 
             if show_matches:
@@ -285,11 +329,14 @@ def main(training_images_path,
                 fig, ax = plt.subplots(nrows=1, ncols=1)
                 
                 Path("output/task3/").mkdir(parents=True, exist_ok=True)
-                plot_matches(image1=scene_image, image2=emoji, keypoints1=scene_keypoints, keypoints2=template_keypoints, matches=matches, only_matches=True, ax=ax)
-                plt.savefig(f"output/task3/{scene_image_name}_{emoji_name}_matches.png")
+                plot_matches(image1=scene_image, image2=emoji,
+                             keypoints1=scene_keypoints,
+                             keypoints2=template_keypoints, matches=matches,
+                             only_matches=True, ax=ax)
+                plt.savefig(
+                    f"output/task3/{scene_image_name}_{emoji_name}_matches.png")
                 plt.close(fig)
 
-        # TODO 3: Print the results
         end = time()
         times_taken.append(end - start)
         print("Bounding boxes: ", bounding_boxes)
@@ -298,7 +345,8 @@ def main(training_images_path,
         total_fp += fp
         total_acc.append(acc)
     
-        output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, f"output/task3/")
+        output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
+                              "output/task3/")
     
     print(total_acc)
     print(f"True positive rate: {total_tp / (total_tp + total_fp)} (total: {total_tp})")
@@ -309,42 +357,46 @@ def main(training_images_path,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='''Task 3: Using SIFT feature matching to perform identification of emojis and their bounding boxes. The accuracy is expressed as a percentage. The training images are located in the folder "data/task2/training", the test images are located in the folder "data/task3/test/images" and the corresponding annotations are located in the folder "data/task3/test/annotations"''',
+        description='''
+        Task 3: Using SIFT feature matching to perform identification of emojis
+        and their bounding boxes. The accuracy is expressed as a percentage.
+        The training images are located in the folder "data/task2/training", the
+        test images are located in the folder "data/task3/test/images" and the
+        corresponding annotations are located in the folder
+        "data/task3/test/annotations"
+        ''',
     )
-    parser.add_argument("training_images_path", help="Path to the training images")
-    parser.add_argument("test_images_path", help="Path to the test images")
+    parser.add_argument("training_images_path",
+                        help="Path to the training images")
+    parser.add_argument("test_images_path",
+                        help="Path to the test images")
     parser.add_argument("ground_truths_path", help="Path to the ground truths")
-    parser.add_argument("-b", "--boxes", help="Show the bounding boxes", action="store_true")
-    parser.add_argument("-m", "--matches", help="Show the feature matches", action="store_true")
-    parser.add_argument("-o", "--octaves", help="The number of SIFT octaves (default is 5)", default=5, type=int)
-    parser.add_argument("-r", "--ratio", help="The maximum ratio distances used when matching (default is 0.7)", default=0.7, type=float)
-    parser.add_argument("-s", "--scales", help="The number of scales per SIFT octave (default is 4)", default=4, type=int)
-    parser.add_argument("-t", "--threshold", help="The number of feature matches required for a class prediction (default is 5)", default=5, type=int)
-    parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
-    training_images_path, test_images_path, ground_truths_path, show_boxes, show_matches, octaves, ratio, scales, threshold, verbose = (
-        itemgetter(
-            "training_images_path",
-            "test_images_path",
-            "ground_truths_path",
-            "boxes",
-            "matches",
-            "octaves",
-            "ratio",
-            "scales",
-            "threshold",
-            "verbose"
-        )(vars(parser.parse_args()))
-    )
+    parser.add_argument("-b", "--boxes", help="Show the bounding boxes",
+                        action="store_true")
+    parser.add_argument("-m", "--matches", help="Show the feature matches",
+                        action="store_true")
+    parser.add_argument("-o", "--octaves",
+                        help="The number of SIFT octaves (default is 5)",
+                        default=5, type=int)
+    parser.add_argument("-r", "--ratio",
+                        help="""
+                        The maximum ratio distances used when matching
+                        (default is 0.7)
+                        """, default=0.7, type=float)
+    parser.add_argument("-s", "--scales",
+                        help="""
+                        The number of scales per SIFT octave
+                        (default is 4)
+                        """, default=4, type=int)
+    parser.add_argument("-t", "--threshold",
+                        help="""
+                        The number of feature matches required for a class
+                        prediction (default is 5)
+                        """, default=5, type=int)
+    parser.add_argument("-v", "--verbose", help="Increase output verbosity",
+                        action="store_true")
+    args = parser.parse_args()
 
-    main(
-        training_images_path,
-        test_images_path,
-        ground_truths_path,
-         octaves,
-        ratio,
-        scales,
-        threshold,
-        show_boxes,
-        show_matches,
-        verbose
-    )
+    main(args.training_images_path, args.test_images_path,
+         args.ground_truths_path, args.octaves, args.ratio, args.scales,
+         args.threshold, args.show_boxes, args.show_matches, args.verbose)

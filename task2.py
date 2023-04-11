@@ -17,7 +17,8 @@ from tqdm import tqdm
 
 def load_images(path):
     """
-    Loads training images from a given path and returns them as a dictionary of numpy arrays, where the key is the filename.
+    Loads training images from a given path and returns them as a dictionary of
+    numpy arrays, where the key is the filename.
     """
     if not path.endswith("/"):
         path += "/"
@@ -51,7 +52,8 @@ def preprocess(image):
     image[image < 0.5] = 0
     return image
 
-def generate_templates(image_class, image, levels, angles, verbose=False, use_cache=True):
+def generate_templates(image_class, image, levels, angles, verbose=False,
+                       use_cache=True):
     """
     Generates rotated templates for a given image, number of levels, and angles.
     """
@@ -62,13 +64,16 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
             os.mkdir(".cache")
 
         # Check how large the cache is in bytes
-        cache_size_bytes = sum(os.path.getsize(f".cache/{f}") for f in os.listdir(".cache") if os.path.isfile(f".cache/{f}"))
+        cache_size_bytes = sum(os.path.getsize(f".cache/{f}") for f in
+                               os.listdir(".cache") if
+                               os.path.isfile(f".cache/{f}"))
         cache_size_mb = cache_size_bytes / 1000000
         if verbose:
             print(f"Cache size: {cache_size_mb} MB")
 
         if cache_size_mb > 1000 and verbose:
-            print(f"Warning: The cache directory is getting large ({cache_size_mb} MB). Consider deleting some files.")
+            print(f"""Warning: The cache directory is getting large
+            ({cache_size_mb} MB). Consider deleting some files.""")
 
         # Generate hash using image_class, levels, and angles
         file_name = f"{image_class}_{levels}_{'_'.join([str(angle) for angle in angles])}"
@@ -81,7 +86,6 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
         except FileNotFoundError:
             if verbose:
                 print("Cache not found. Generating templates...")
-            pass
 
     # Generate gaussian pyramids
     pyramid = list(pyramid_gaussian(image, max_layer=levels - 1))
@@ -102,7 +106,7 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
     if use_cache:
         # If there already exist files with the same class, delete them
         if verbose:
-            print(f"Clearing old templates from cache...")
+            print("Clearing old templates from cache...")
 
         for file in os.listdir(".cache"):
             if file.startswith(image_class):
@@ -110,7 +114,7 @@ def generate_templates(image_class, image, levels, angles, verbose=False, use_ca
 
         # Save the templates to the cache
         if verbose:
-            print(f"Saving templates to cache...")
+            print("Saving templates to cache...")
 
         with open(f".cache/{file_name}.pkl", "wb") as f:
             pickle.dump(templates, f)
@@ -135,12 +139,12 @@ def compute_iou(box_1,box_2):
     """
 
     # tl is the top left of the given box and br is the bottom right
-    tl, br, x, y = (0, 1, 0, 1)
+    top_left, bottom_right, x, y = (0, 1, 0, 1)
 
-    box_1_area = (box_1[br][x] - box_1[tl][x]) * (box_1[br][y] - box_1[tl][y])
-    box_2_area = (box_2[br][x] - box_2[tl][x]) * (box_2[br][y] - box_2[tl][y])
+    box_1_area = (box_1[bottom_right][x] - box_1[top_left][x]) * (box_1[bottom_right][y] - box_1[top_left][y])
+    box_2_area = (box_2[bottom_right][x] - box_2[top_left][x]) * (box_2[bottom_right][y] - box_2[top_left][y])
 
-    intersect = (min(box_1[br][x], box_2[br][x]) - max(box_1[tl][x], box_2[tl][x])) * (min(box_1[br][y], box_2[br][y]) - max(box_1[tl][y], box_2[tl][y]))
+    intersect = (min(box_1[bottom_right][x], box_2[bottom_right][x])- max(box_1[top_left][x], box_2[top_left][x])) * (min(box_1[bottom_right][y], box_2[bottom_right][y]) - max(box_1[top_left][y], box_2[top_left][y]))
 
     # If there is no intersection
     if intersect < 0:
@@ -200,7 +204,8 @@ def evaluate(matches, templates, annotations_file):
 
     return true_positives, false_positives, overall_accuracy
 
-def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_path):
+def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
+                          output_path):
     """
     Saves the bounding box to a file.
 
@@ -229,24 +234,28 @@ def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name, output_
         color = np.random.rand(3,)
 
         # Draw a rectangular patch
-        patch = plt.Polygon(bounding_box, fill=False, edgecolor=color, linewidth=2)
+        patch = plt.Polygon(bounding_box, fill=False, edgecolor=color,
+                            linewidth=2)
         ax.add_patch(patch)
         # Add the label to the patch
-        ax.text(bounding_box[0][0], bounding_box[0][1] + 10, emoji_name, color=color)
+        ax.text(bounding_box[0][0], bounding_box[0][1] + 10, emoji_name,
+                color=color)
 
 
     # Save the image
     plt.savefig(output_path + f"{scene_image_name}_bounding_box.png")
     plt.close(fig)
 
-def main(training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose, show_boxes):
+def main(training_images_path, test_images_path, ground_truths_path, angles,
+         levels, threshold, verbose, show_boxes):
     training_images = load_images(training_images_path)
 
     # Get template variants of each emoji
     templates = defaultdict(list)
     for emoji, training_image in training_images.items():
-        roation_angles = np.linspace(0, 360, angles, endpoint=False)
-        templates[emoji] = generate_templates(emoji, training_image, levels, roation_angles, verbose)
+        rotation_angles = np.linspace(0, 360, angles, endpoint=False)
+        templates[emoji] = generate_templates(emoji, training_image, levels,
+                                              rotation_angles, verbose)
 
     # Load test images
     test_images = load_images(test_images_path)
@@ -303,7 +312,8 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
 
         # Output the bounding boxes
         if show_boxes:
-            output_bounding_boxes(bounding_boxes, test_image, key, "output/task2/")
+            output_bounding_boxes(bounding_boxes, test_image, key,
+                                  "output/task2/")
             
         end = time()
         times_taken.append(end - start)
@@ -320,27 +330,36 @@ def main(training_images_path, test_images_path, ground_truths_path, angles, lev
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='''Task 2: Using intensity-based template matching to perform scale and rotation invariant identification of emojis and their bounding boxes. The accuracy is expressed as a percentage. The training images are located in the folder "data/task2/training", the test images are located in the folder "data/task2/test/images" and the corresponding annotations are located in the folder "data/task2/test/annotations"''',
+        description='''
+        Task 2: Using intensity-based template matching to perform scale and
+        rotation invariant identification of emojis and their bounding boxes.
+        The accuracy is expressed as a percentage. The training images are
+        located in the folder "data/task2/training", the test images are
+        located in the folder "data/task2/test/images" and the corresponding
+        annotations are located in the folder "data/task2/test/annotations"
+        ''',
     )
-    parser.add_argument("training_images_path", help="Path to the training images")
+    parser.add_argument("training_images_path",
+                        help="Path to the training images")
     parser.add_argument("test_images_path", help="Path to the test images")
     parser.add_argument("ground_truths_path", help="Path to the ground truths")
-    parser.add_argument("-a", "--angles", help="Angles between 0 and 360 to use for image rotations (default is 1)", default=1, type=int)
-    parser.add_argument("-b", "--boxes", help="Show the bounding boxes", action="store_true")
-    parser.add_argument("-l", "--levels", help="Gaussian pyramid levels (default is 4)", default=4, type=int)
-    parser.add_argument("-t", "--threshold", help="Threshold required for a match (default is 0.95)", default=0.95, type=float)
-    parser.add_argument("-v", "--verbose", help="Increase output verbosity", action="store_true")
-    training_images_path, test_images_path, ground_truths_path, angles, show_boxes, levels, threshold, verbose = (
-        itemgetter(
-            "training_images_path",
-            "test_images_path",
-            "ground_truths_path",
-            "angles",
-            "boxes",
-            "levels",
-            "threshold",
-            "verbose"
-        )(vars(parser.parse_args()))
-    )
+    parser.add_argument("-a", "--angles",
+                        help="""
+                        Angles between 0 and 360 to use for image rotations
+                        (default is 1)
+                        """, default=1, type=int)
+    parser.add_argument("-b", "--boxes", help="Show the bounding boxes",
+                        action="store_true")
+    parser.add_argument("-l", "--levels",
+                        help="Gaussian pyramid levels (default is 4)",
+                        default=4, type=int)
+    parser.add_argument("-t", "--threshold",
+                        help="Threshold required for a match (default is 0.95)",
+                        default=0.95, type=float)
+    parser.add_argument("-v", "--verbose", help="Increase output verbosity",
+                        action="store_true")
+    args = parser.parse_args()
 
-    main(training_images_path, test_images_path, ground_truths_path, angles, levels, threshold, verbose, show_boxes)
+    main(args.training_images_path, args.test_images_path,
+         args.ground_truths_path, args.angles, args.levels, args.threshold,
+         args.verbose, args.show_boxes)
