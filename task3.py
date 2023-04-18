@@ -81,7 +81,7 @@ def get_best_matches(matches, scene_keypoints, locality_pixels=64):
 
 def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     """
-    Returns the bounding box of the template image.
+    Returns the bounding box of the template image and the number of outliers using RANSAC.
 
     Args:
         matches (np.ndarray): The indices of the matching keypoints between the
@@ -91,22 +91,32 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
         image_size (tuple): The size of the test image.
     """
 
-    # Find the best matches
-    matches = get_best_matches(matches, scene_keypoints)
-
     src_points = template_keypoints[matches[:, 1]]
     dst_points = scene_keypoints[matches[:, 0]]
+    min_outliers = np.inf
+    best_transform = None
 
-    # Create a trasformation matrix that maps the source image to the target
-    # image
-    tform = estimate_transform("similarity", src_points, dst_points)
+    n_iterations = np.ceil(np.log(1-0.99) / np.log(1-0.8**3))
+    for i in range(int(n_iterations)):
+        # Pick 3 random points from the matches
+        random_indices = np.random.choice(len(matches), 3, replace=False)
+        src_subset = src_points[random_indices]
+        dst_subset = dst_points[random_indices]
+        tform = estimate_transform("similarity", src_subset, dst_subset)
+        transformed_points = tform(src_points)
+        
+        distances = np.linalg.norm(transformed_points - dst_points, axis=1)
+        outliers = np.where(distances > 5)[0]
+        if len(outliers) < min_outliers:
+            min_outliers = len(outliers)
+            best_transform = tform
 
     # Get the corners of the template image
     corners = np.array([[0,0], [0, image_size[0]],
                         [image_size[1],image_size[0]], [image_size[1], 0]])
 
     # Transform the corners of the template image to the target image
-    transformed_corners = tform(corners)
+    transformed_corners = best_transform(corners)
 
     # Swap the x and y coordinates
     transformed_corners = transformed_corners[:, [1, 0]]
@@ -122,7 +132,7 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
                     np.max(transformed_corners[:, 1]))
 
     # Return the bounding box of the template image
-    return (bottom_left, top_left, top_right, bottom_right)
+    return (bottom_left, top_left, top_right, bottom_right), min_outliers
 
 def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
                           output_path):
@@ -304,7 +314,7 @@ def main(training_images_path,
                 scene_descriptors,
                 template_descriptors,
                 cross_check=True,
-                max_ratio=0.7,
+                max_ratio=ratio,
                 metric="euclidean",
                 p=2,
                 max_distance=np.inf,
@@ -318,11 +328,12 @@ def main(training_images_path,
             
             if len(matches) > threshold:
                 # Check locality of matches
-                if are_local(scene_keypoints[matches[:, 0]]):
-                    bounding_box = get_bounding_box(matches, template_keypoints,
-                                                    scene_keypoints,
-                                                    emoji.shape)
-                    bounding_boxes[emoji_name] = bounding_box
+                bounding_box, outliers = get_bounding_box(matches, template_keypoints,
+                                                scene_keypoints,
+                                                emoji.shape)
+                if outliers / len(matches) > 0.333:
+                    continue
+                bounding_boxes[emoji_name] = bounding_box
 
             if show_matches:
                 # Output image showing lines between matching keypoints
@@ -381,8 +392,8 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--ratio",
                         help="""
                         The maximum ratio distances used when matching
-                        (default is 0.7)
-                        """, default=0.7, type=float)
+                        (default is 0.9)
+                        """, default=0.9, type=float)
     parser.add_argument("-s", "--scales",
                         help="""
                         The number of scales per SIFT octave
@@ -391,12 +402,12 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--threshold",
                         help="""
                         The number of feature matches required for a class
-                        prediction (default is 5)
-                        """, default=5, type=int)
+                        prediction (default is 6)
+                        """, default=6, type=int)
     parser.add_argument("-v", "--verbose", help="Increase output verbosity",
                         action="store_true")
     args = parser.parse_args()
 
     main(args.training_images_path, args.test_images_path,
          args.ground_truths_path, args.octaves, args.ratio, args.scales,
-         args.threshold, args.show_boxes, args.show_matches, args.verbose)
+         args.threshold, args.boxes, args.matches, args.verbose)
