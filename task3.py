@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage.feature import SIFT, match_descriptors, plot_matches
 from skimage.io import imread
-from skimage.transform import estimate_transform
+from skimage.measure import ransac
+from skimage.transform import SimilarityTransform
 from tqdm import tqdm
 
 
@@ -25,7 +26,7 @@ def load_images(path):
         images = {}
         for file in os.listdir(path):
             if file.endswith(".png"):
-                images[file] = imread(path + file, as_gray=True)
+                images[file] = imread(path + file)
         return images
     except FileNotFoundError:
         print(f"Error: The path {path} does not exist.")
@@ -42,46 +43,11 @@ def load_images(path):
     except:
         print(f"Error: An unexpected error occurred while loading the images.")
         sys.exit(1)
-
-def are_local(keypoints, locality_pixels=64, confidence_threshold=0.6):
-    """
-    Checks if the keypoints in the target image are local.
-    """
-    # Determine the centroid of the matches
-    centroid = np.mean(keypoints, axis=0)
-    # Calculate the distance of each match to the centroid
-    distances = np.linalg.norm(keypoints - centroid, axis=1)
-    # Check if the majority of the matches are within the threshold
-    return np.sum(distances < locality_pixels) > confidence_threshold * len(distances)
-
-def get_best_matches(matches, scene_keypoints, locality_pixels=64):
-    """
-    Returns the highest quality matches.
-
-    Args:
-        matches (np.ndarray): The indices of the matching keypoints between the
-                              target image and the template image.
-        target_keypoints (np.ndarray): The keypoints of the test image.
-        locality_pixels (int): The maximum distance of a match to the centroid
-                               of all matches.
-    """
-    # Get the best target keypoints
-    keypoints = scene_keypoints[matches[:, 0]]
-
-    # Determine the centroid of the matches
-    centroid = np.mean(keypoints, axis=0)
-
-    # Calculate the distance of each match to the centroid
-    distances = np.linalg.norm(keypoints - centroid, axis=1)
-
-    # Get the indices of the matches that are within the threshold
-    indices = np.where(distances < locality_pixels)[0]
-    return matches[indices]
     
 
 def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
     """
-    Returns the bounding box of the template image and the number of outliers using RANSAC.
+    Returns the bounding box of the template image and the score of the model.
 
     Args:
         matches (np.ndarray): The indices of the matching keypoints between the
@@ -93,30 +59,23 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
 
     src_points = template_keypoints[matches[:, 1]]
     dst_points = scene_keypoints[matches[:, 0]]
-    min_outliers = np.inf
-    best_transform = None
+    
+    model, inliers = ransac((
+        src_points,
+        dst_points
+    ), SimilarityTransform, min_samples=3, residual_threshold=8)
 
-    n_iterations = np.ceil(np.log(1-0.99) / np.log(1-0.8**3))
-    for i in range(int(n_iterations)):
-        # Pick 3 random points from the matches
-        random_indices = np.random.choice(len(matches), 3, replace=False)
-        src_subset = src_points[random_indices]
-        dst_subset = dst_points[random_indices]
-        tform = estimate_transform("similarity", src_subset, dst_subset)
-        transformed_points = tform(src_points)
-        
-        distances = np.linalg.norm(transformed_points - dst_points, axis=1)
-        outliers = np.where(distances > 5)[0]
-        if len(outliers) < min_outliers:
-            min_outliers = len(outliers)
-            best_transform = tform
+    score = inliers.sum()
+
+    # Generate best transformation matrix using all inliers
+    model.estimate(src_points[inliers], dst_points[inliers])
 
     # Get the corners of the template image
     corners = np.array([[0,0], [0, image_size[0]],
                         [image_size[1],image_size[0]], [image_size[1], 0]])
 
     # Transform the corners of the template image to the target image
-    transformed_corners = best_transform(corners)
+    transformed_corners = model(corners)
 
     # Swap the x and y coordinates
     transformed_corners = transformed_corners[:, [1, 0]]
@@ -132,7 +91,7 @@ def get_bounding_box(matches, template_keypoints, scene_keypoints, image_size):
                     np.max(transformed_corners[:, 1]))
 
     # Return the bounding box of the template image
-    return (bottom_left, top_left, top_right, bottom_right), min_outliers
+    return (bottom_left, top_left, top_right, bottom_right), score
 
 def output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
                           output_path):
@@ -193,7 +152,7 @@ def compute_iou(box_1,box_2):
 def evaluate(bounding_boxes, annotations_file):
     # Read in the data from the annotations
     annotations = {}
-    with open(annotations_file, "r") as f:
+    with open(annotations_file, "r", encoding='utf8') as f:
         lines = f.readlines()
         for annotation in lines:
             annotation = annotation.split(",", 1)
@@ -246,7 +205,6 @@ def main(training_images_path,
     octaves,
     ratio,
     scales,
-    threshold,
     show_boxes=False,
     show_matches=False,
     verbose=False):
@@ -259,26 +217,13 @@ def main(training_images_path,
     scene_images = load_images(test_images_path)
 
     # Initialize the SIFT detector
-    sift = SIFT(
-        n_octaves=octaves,
-        n_scales=scales,
-        upsampling=2,
-        sigma_min=1.6,
-        sigma_in=0.5,
-        c_dog=0.04/3,
-        c_edge=10,
-        c_max=0.8,
-        lambda_ori=1.5,
-        lambda_descr=6,
-        n_bins=36,
-        n_hist=4,
-        n_ori=8
-    )
+    sift = SIFT(n_octaves=octaves,n_scales=scales)
 
     times_taken = []
     total_tp = 0
     total_fp = 0
     total_acc = []
+    scores = {}
 
     # For each test image, perform SIFT and match with emojis
     for scene_image_name, scene_image in tqdm(scene_images.items()):
@@ -326,15 +271,6 @@ def main(training_images_path,
                 {len(matches)}
                 """)
             
-            if len(matches) > threshold:
-                # Check locality of matches
-                bounding_box, outliers = get_bounding_box(matches, template_keypoints,
-                                                scene_keypoints,
-                                                emoji.shape)
-                if outliers / len(matches) > 0.333:
-                    continue
-                bounding_boxes[emoji_name] = bounding_box
-
             if show_matches:
                 # Output image showing lines between matching keypoints
                 fig, ax = plt.subplots(nrows=1, ncols=1)
@@ -347,6 +283,23 @@ def main(training_images_path,
                 plt.savefig(
                     f"output/task3/{scene_image_name}_{emoji_name}_matches.png")
                 plt.close(fig)
+            
+            if len(matches) > 3:
+                # Check locality of matches
+                bounding_box, score = get_bounding_box(matches, template_keypoints,
+                                                scene_keypoints,
+                                                emoji.shape)
+                if scene_image_name not in scores:
+                    scores[scene_image_name] = {}
+                scores[scene_image_name][emoji_name] = score / len(matches)
+
+                if score / len(matches) < 0.35:
+                    if verbose:
+                        print("Score too low, skipping...")
+                    continue
+
+                bounding_boxes[emoji_name] = bounding_box
+
 
         end = time()
         times_taken.append(end - start)
@@ -355,8 +308,9 @@ def main(training_images_path,
         total_tp += tp
         total_fp += fp
         total_acc.append(acc)
-    
-        output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
+
+        if show_boxes:
+            output_bounding_boxes(bounding_boxes, scene_image, scene_image_name,
                               "output/task3/")
     
     print(total_acc)
@@ -365,6 +319,7 @@ def main(training_images_path,
     print(f"Accuracy: {np.mean(total_acc)}")
     print(f"Average time taken: {np.mean(times_taken):.2f}s")
     print(f"Average time taken: {round(np.mean(times_taken), 2)}s")
+    print(scores)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -392,22 +347,17 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--ratio",
                         help="""
                         The maximum ratio distances used when matching
-                        (default is 0.9)
-                        """, default=0.9, type=float)
+                        (default is 1)
+                        """, default=1, type=float)
     parser.add_argument("-s", "--scales",
                         help="""
                         The number of scales per SIFT octave
                         (default is 4)
-                        """, default=4, type=int)
-    parser.add_argument("-t", "--threshold",
-                        help="""
-                        The number of feature matches required for a class
-                        prediction (default is 6)
-                        """, default=6, type=int)
+                        """, default=5, type=int)
     parser.add_argument("-v", "--verbose", help="Increase output verbosity",
                         action="store_true")
     args = parser.parse_args()
 
     main(args.training_images_path, args.test_images_path,
          args.ground_truths_path, args.octaves, args.ratio, args.scales,
-         args.threshold, args.boxes, args.matches, args.verbose)
+         args.boxes, args.matches, args.verbose)
